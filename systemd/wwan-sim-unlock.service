@@ -1,0 +1,15 @@
+[Unit]
+Description=WWAN SIM PIN Unlock
+After=wwan-fcc-unlock.service ModemManager.service
+Wants=ModemManager.service
+Before=display-manager.service display-manager-legacy.service
+ConditionPathExists=/sys/bus/pci/devices/0000:01:00.0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wwan-sim-unlock.sh
+RemainAfterExit=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=WWAN FCC Unlock for Intel XMM7560
+After=ModemManager.service
+Wants=ModemManager.service
+ConditionPathExists=/sys/bus/pci/devices/0000:01:00.0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wwan-fcc-unlock.sh
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+#!/bin/bash
+# NM dispatcher: configure wwan0 IP when the Orange connection comes up.
+# Called by NetworkManager with $1=interface $2=action and CONNECTION_ID in env.
+
+IFACE=$1
+ACTION=$2
+
+if [ "$CONNECTION_ID" = "Orange" ] && [ "$ACTION" = "up" ]; then
+    logger "NM dispatcher: Orange up on $IFACE, configuring wwan0"
+    (sleep 2; python3 /usr/local/bin/wwan-setup-ip.py >> /var/log/wwan0-setup.log 2>&1) &
+fi
