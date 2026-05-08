@@ -80,7 +80,7 @@ When the user connects from the desktop network applet, the NM dispatcher script
 ## Installation
 
 ```bash
-git clone <this repo>
+git clone https://github.com/raulillo82/intel-xmm7560-lte
 cd intel-xmm7560-lte
 sudo bash install.sh
 ```
