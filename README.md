@@ -95,16 +95,44 @@ If your connection is not named `Orange`, edit `networkmanager/dispatcher.d/99-w
 
 ---
 
-## Carrier configuration (Orange Spain)
+## Carrier configuration
 
 | Field | Value |
 |-------|-------|
-| APN | `orangeworld` |
-| Username | `orange` |
-| Password | `orange` |
+| APN | `<your-apn>` |
+| Username | `<your-username>` |
+| Password | `<your-password>` |
 | DNS | `8.8.8.8`, `8.8.4.4` (set `ignore-auto-dns=yes`) |
 | IPv6 | ignore |
 | Autoconnect | no (connect manually from the desktop applet) |
+
+Your carrier's APN settings are usually published on their website or sent via SMS on first SIM insertion.
+
+---
+
+## Testing LTE speed
+
+```bash
+scripts/wwan-speedtest.sh
+```
+
+Binds `speedtest-cli` to the `wwan0` interface so the test runs exclusively over LTE (not your default route). Pass any extra flags directly to `speedtest-cli`, e.g. `--simple` for a shorter one-liner output.
+
+Requires `speedtest-cli` (`zypper install speedtest-cli` or `pip install speedtest-cli`).
+
+---
+
+## Reading SMS messages
+
+```bash
+# via ModemManager (default — ModemManager must be running)
+python3 scripts/wwan-sms-read.py
+
+# via AT port directly (use when ModemManager is stopped)
+sudo python3 scripts/wwan-sms-read.py --at
+```
+
+Lists all SMS stored in the modem/SIM and prints sender, timestamp and body for each one. The AT fallback mode (`--at`) bypasses ModemManager and talks to `/dev/wwan0at0` directly — useful during manual recovery when MM is stopped.
 
 ---
 
@@ -119,6 +147,8 @@ If your connection is not named `Orange`, edit `networkmanager/dispatcher.d/99-w
 | `systemd/wwan-fcc-unlock.service` | `/etc/systemd/system/` | Systemd unit for FCC unlock |
 | `systemd/wwan-sim-unlock.service` | `/etc/systemd/system/` | Systemd unit for SIM PIN unlock |
 | `networkmanager/dispatcher.d/99-wwan-ip` | `/etc/NetworkManager/dispatcher.d/` | Configures `wwan0` IP when connection activates |
+| `scripts/wwan-speedtest.sh` | run directly | Tests LTE down/up speed via `speedtest-cli`, bound to `wwan0` |
+| `scripts/wwan-sms-read.py` | run directly | Lists and reads SMS messages via mmcli or AT port |
 
 ---
 
@@ -145,7 +175,7 @@ sudo systemctl start ModemManager NetworkManager
 sleep 10
 
 # Connect
-sudo nmcli connection up Orange
+sudo nmcli connection up <your-carrier>
 # or use the desktop network applet — wwan-setup-ip.py runs automatically
 ```
 
