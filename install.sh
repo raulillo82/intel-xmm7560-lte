@@ -26,9 +26,15 @@ echo "Installing NetworkManager dispatcher..."
 cp networkmanager/dispatcher.d/99-wwan-ip /etc/NetworkManager/dispatcher.d/
 chmod +x /etc/NetworkManager/dispatcher.d/99-wwan-ip
 
+echo "Installing udev rules..."
+cp udev/99-wwan-at.rules /etc/udev/rules.d/
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=wwan
+
 echo ""
 echo "Done. Next steps:"
-echo "  1. Create a NetworkManager GSM connection named 'Orange' (or edit 99-wwan-ip to match your connection name)"
-echo "  2. Store your SIM PIN:  nmcli connection modify <name> gsm.pin <PIN>"
-echo "  3. Set connection.autoconnect to no if you want manual-only connections"
-echo "  4. Reboot and connect from your desktop network applet"
+echo "  1. Add your user to the dialout group: usermod -aG dialout <user>  (log out and back in)"
+echo "  2. Create a NetworkManager GSM connection (or edit 99-wwan-ip to match your connection name)"
+echo "  3. Store your SIM PIN:  nmcli connection modify <name> gsm.pin <PIN>"
+echo "  4. Set connection.autoconnect to no if you want manual-only connections"
+echo "  5. Reboot and connect from your desktop network applet"

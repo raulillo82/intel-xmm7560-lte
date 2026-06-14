@@ -1,0 +1,8 @@
+# Grant dialout group read/write access to the Intel XMM7560 AT port.
+# This allows users in the dialout group to open /dev/wwan0at0 directly
+# without sudo, enabling wwan-sms-read.py --at mode.
+#
+# Install: sudo cp udev/99-wwan-at.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload-rules && sudo udevadm trigger
+
+SUBSYSTEM=="wwan", KERNEL=="wwan*at*", GROUP="dialout", MODE="0660"
