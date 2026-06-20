@@ -55,7 +55,7 @@ print(f"IP: {ip}/{prefix}  GW: {gw}")
 os.system("ip addr flush dev wwan0 2>/dev/null")
 os.system(f"ip addr add {ip}/{prefix} dev wwan0")
 os.system("ip link set wwan0 up")
-os.system(f"ip route add default via {gw} dev wwan0 metric 200 2>/dev/null")
+os.system(f"ip route add default via {gw} dev wwan0 metric 700 2>/dev/null")
 
 print("wwan0 configured. Testing ping...")
 rc = os.system("ping -c 5 -W 2 -I wwan0 8.8.8.8")
