@@ -134,6 +134,40 @@ sudo python3 scripts/wwan-sms-read.py --at
 
 Lists all SMS stored in the modem/SIM and prints sender, timestamp and body for each one. The AT fallback mode (`--at`) bypasses ModemManager and talks to `/dev/wwan0at0` directly — useful during manual recovery when MM is stopped.
 
+Since the LTE connection is manual-only (`autoconnect=no`), the SIM can be sitting offline with no way to receive new SMS. In mmcli mode the script detects this and offers to bring the connection up for you:
+
+```bash
+$ python3 scripts/wwan-sms-read.py
+Aviso: la SIM está desconectada de la red — solo se mostrarán los
+SMS que ya estuvieran almacenados en la tarjeta.
+
+¿Conectar la SIM a la red para comprobar mensajes pendientes? [s/N]: s
+Conectando SIM a la red (nmcli connection up Orange)... OK (registrada en red)
+Esperando SMS pendientes (10s): 10.. 9.. 8.. ... listo
+...
+¿Desconectar la SIM ahora? [S/n]:
+```
+
+Useful flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--from PATTERN` | only show messages whose sender matches a regex |
+| `--grep PATTERN` | only show messages whose text matches a regex |
+| `--code` | extract confirmation codes from the shown messages, copy the first one to the clipboard (`wl-copy`/`xclip`) and send a desktop notification if available |
+| `--watch` | connect if needed, wait `--wait` seconds, and show only messages that arrived during the wait — instead of the whole mailbox (mmcli mode only) |
+| `--wait SECONDS` | override the pending-SMS wait time, default 10s (mmcli mode only) |
+| `--keep-online SECONDS` | if the script connected the SIM, disconnect automatically after SECONDS instead of asking; `0` disconnects immediately (mmcli mode only) |
+| `-y`, `--yes` | assume yes to the connect/disconnect prompts, for non-interactive use |
+| `--delete-after-read` | delete every shown message once printed |
+| `--connection NAME` | NM connection name to bring online, default `Orange` (mmcli mode only) |
+
+Example — wait for a bank confirmation code without any prompts, grab the code, and disconnect right after:
+
+```bash
+python3 scripts/wwan-sms-read.py --from openbank --watch --code -y --keep-online 0
+```
+
 ---
 
 ## Files
