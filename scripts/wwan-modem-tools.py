@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Read and manage SMS messages from the LTE modem.
+Read/manage SMS messages and control call forwarding on the LTE modem.
 
-Default mode: uses mmcli (ModemManager must be running).
-AT mode (--at): talks directly to the AT port. The script stops
-ModemManager, adjusts port permissions, and restores everything on
-exit — using only specific sudo commands (chmod on the AT device,
-systemctl for MM), not sudo on itself.
+SMS default mode: uses mmcli (ModemManager must be running).
+Call forwarding always goes through the AT port directly — AT+CCFC has
+no mmcli equivalent, and exposing it via `mmcli --command` would need a
+much broader (and more sensitive) sudoers entry than the ones already
+in place.
+
+AT mode (--at, or automatically for call forwarding): talks directly to
+the AT port. The script stops ModemManager, adjusts port permissions,
+and restores everything on exit — using only specific sudo commands
+(chmod on the AT device, systemctl for MM), not sudo on itself.
 """
 
 import argparse
@@ -458,11 +463,114 @@ def cmd_at_delete(args):
                 print(f"\nUnexpected modem response: {repr(resp)}", file=sys.stderr)
 
 
+# ── call forwarding (AT+CCFC, always via the AT port) ──────────────────────────
+
+CCFC_REASON_UNCONDITIONAL = 0
+CCFC_WAIT = 15         # seconds — this is a network round trip (registration/erasure), not a local query
+CREG_TIMEOUT = 30      # seconds to wait for CS network registration before issuing AT+CCFC
+
+CCFC_LINE_RE = re.compile(r'\+CCFC:\s*(\d+),(\d+)(?:,"([^"]*)",(\d+))?')
+CREG_STAT_RE = re.compile(r'\+CREG:\s*\d+,(\d+)')
+
+
+def ccfc_number_type(number):
+    return 145 if number.startswith('+') else 129   # 145 = international, 129 = national/unknown
+
+
+def parse_ccfc(response):
+    """Parse AT+CCFC=0,2 (query) response into a list of {status, cls, number, type} dicts."""
+    entries = []
+    for m in CCFC_LINE_RE.finditer(response):
+        status, cls, number, ntype = m.groups()
+        entries.append({'status': status, 'class': cls, 'number': number, 'type': ntype})
+    return entries
+
+
+def at_ensure_registered(at, timeout=CREG_TIMEOUT):
+    """
+    AT+CCFC needs CS (voice) network registration. Stopping ModemManager to
+    grab the AT port also stops whatever was keeping the modem registered
+    (MM normally holds AT+COPS=0), so re-trigger automatic registration and
+    wait for it here rather than failing with a bare '+CME ERROR: unknown'.
+    """
+    def registered():
+        m = CREG_STAT_RE.search(at.cmd('AT+CREG?', wait=0.5))
+        return m and m.group(1) in ('1', '5')   # 1 = home, 5 = roaming
+
+    if registered():
+        return True
+
+    print("Registrando en la red móvil...", end=' ', flush=True)
+    at.cmd('AT+COPS=0', wait=1.0)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(3)
+        if registered():
+            print("OK")
+            return True
+    print("TIMEOUT")
+    return False
+
+
+def cmd_callfwd_status(args):
+    with AtPort(args.at or AT_PORT_DEFAULT) as at:
+        at.cmd('ATE0', wait=0.3)
+        if not at_ensure_registered(at):
+            die("no se pudo registrar en la red móvil; el desvío de llamadas requiere registro de voz (CS)")
+
+        resp = at.cmd(f'AT+CCFC={CCFC_REASON_UNCONDITIONAL},2', wait=CCFC_WAIT)
+        entries = parse_ccfc(resp)
+        if not entries and 'OK' not in resp:
+            die(f"no se pudo consultar el desvío de llamadas: {resp.strip()}")
+
+        # the network reports one line per service class (voice/data/fax) even
+        # though we only ever register class-independent (unconditional) forwarding,
+        # so collapse to the distinct destination numbers
+        active_numbers = list(dict.fromkeys(e['number'] for e in entries if e['status'] == '1'))
+        print()
+        if not active_numbers:
+            print("Desvío incondicional de llamadas: INACTIVO")
+        else:
+            for number in active_numbers:
+                print(f"Desvío incondicional de llamadas: ACTIVO → {number}")
+
+
+def cmd_callfwd_on(args):
+    number = args.callfwd_on
+    ntype = ccfc_number_type(number)
+    with AtPort(args.at or AT_PORT_DEFAULT) as at:
+        at.cmd('ATE0', wait=0.3)
+        if not at_ensure_registered(at):
+            die("no se pudo registrar en la red móvil; el desvío de llamadas requiere registro de voz (CS)")
+
+        resp = at.cmd(f'AT+CCFC={CCFC_REASON_UNCONDITIONAL},3,"{number}",{ntype}', wait=CCFC_WAIT)
+        print()
+        if 'OK' in resp:
+            print(f"Desvío incondicional de llamadas activado hacia {number}.")
+        else:
+            die(f"no se pudo activar el desvío de llamadas: {resp.strip()}")
+
+
+def cmd_callfwd_off(args):
+    with AtPort(args.at or AT_PORT_DEFAULT) as at:
+        at.cmd('ATE0', wait=0.3)
+        if not at_ensure_registered(at):
+            die("no se pudo registrar en la red móvil; el desvío de llamadas requiere registro de voz (CS)")
+
+        # mode 4 = erasure, mirrors the standard ##21# MMI code (clears the registered number too)
+        resp = at.cmd(f'AT+CCFC={CCFC_REASON_UNCONDITIONAL},4', wait=CCFC_WAIT)
+        print()
+        if 'OK' in resp:
+            print("Desvío incondicional de llamadas desactivado.")
+        else:
+            die(f"no se pudo desactivar el desvío de llamadas: {resp.strip()}")
+
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Read and manage SMS messages from the LTE modem.',
+        description='Read/manage SMS messages and control call forwarding on the LTE modem.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''\
 examples:
@@ -476,16 +584,34 @@ examples:
   %(prog)s --watch --code -y        connect without asking, wait for a new SMS, show its code, disconnect
   %(prog)s --grep "(?i)codigo" --delete-after-read
                                      show messages containing "codigo" and delete them once read
+  %(prog)s --callfwd-status         check whether unconditional call forwarding is active
+  %(prog)s --callfwd-on +34600000000
+                                     forward all incoming calls to +34600000000
+  %(prog)s --callfwd-off            disable call forwarding
 '''
     )
     parser.add_argument(
         '--at', nargs='?', const=AT_PORT_DEFAULT, metavar='PORT',
         help=f'use AT commands directly (default: {AT_PORT_DEFAULT}); '
-             f'stops/starts ModemManager and adjusts port permissions automatically'
+             f'stops/starts ModemManager and adjusts port permissions automatically. '
+             f'Call forwarding always uses this port, with or without the flag.'
     )
     parser.add_argument(
         '--delete', metavar='INDEX|all',
         help='delete a specific SMS by index, or "all" to wipe every message'
+    )
+    callfwd_group = parser.add_mutually_exclusive_group()
+    callfwd_group.add_argument(
+        '--callfwd-status', action='store_true',
+        help='check whether unconditional call forwarding is active (always via AT port)'
+    )
+    callfwd_group.add_argument(
+        '--callfwd-on', metavar='NUMBER',
+        help='forward all incoming calls to NUMBER, E.164 recommended e.g. +34600000000 (always via AT port)'
+    )
+    callfwd_group.add_argument(
+        '--callfwd-off', action='store_true',
+        help='disable unconditional call forwarding (always via AT port)'
     )
     parser.add_argument(
         '--connection', default=DEFAULT_CONNECTION, metavar='NAME',
@@ -528,6 +654,16 @@ examples:
         help='assume yes to all interactive prompts (connect / disconnect), for non-interactive use'
     )
     args = parser.parse_args()
+
+    if args.callfwd_status:
+        cmd_callfwd_status(args)
+        return
+    if args.callfwd_on:
+        cmd_callfwd_on(args)
+        return
+    if args.callfwd_off:
+        cmd_callfwd_off(args)
+        return
 
     at_mode = args.at is not None
 

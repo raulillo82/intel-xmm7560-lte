@@ -126,10 +126,10 @@ Requires `speedtest-cli` (`zypper install speedtest-cli` or `pip install speedte
 
 ```bash
 # via ModemManager (default — ModemManager must be running)
-python3 scripts/wwan-sms-read.py
+python3 scripts/wwan-modem-tools.py
 
 # via AT port directly (use when ModemManager is stopped)
-sudo python3 scripts/wwan-sms-read.py --at
+sudo python3 scripts/wwan-modem-tools.py --at
 ```
 
 Lists all SMS stored in the modem/SIM and prints sender, timestamp and body for each one. The AT fallback mode (`--at`) bypasses ModemManager and talks to `/dev/wwan0at0` directly — useful during manual recovery when MM is stopped.
@@ -137,7 +137,7 @@ Lists all SMS stored in the modem/SIM and prints sender, timestamp and body for 
 Since the LTE connection is manual-only (`autoconnect=no`), the SIM can be sitting offline with no way to receive new SMS. In mmcli mode the script detects this and offers to bring the connection up for you:
 
 ```bash
-$ python3 scripts/wwan-sms-read.py
+$ python3 scripts/wwan-modem-tools.py
 Aviso: la SIM está desconectada de la red — solo se mostrarán los
 SMS que ya estuvieran almacenados en la tarjeta.
 
@@ -165,8 +165,33 @@ Useful flags:
 Example — wait for a bank confirmation code without any prompts, grab the code, and disconnect right after:
 
 ```bash
-python3 scripts/wwan-sms-read.py --from openbank --watch --code -y --keep-online 0
+python3 scripts/wwan-modem-tools.py --from openbank --watch --code -y --keep-online 0
 ```
+
+---
+
+## Call forwarding
+
+Since the SIM lives in the laptop's modem, it can't answer incoming voice calls. Unconditional call forwarding (GSM/3GPP supplementary service, the same one behind the MMI code `**21*NUMBER#`) redirects every incoming call to another number instead.
+
+Unlike SMS, call forwarding is managed with `AT+CCFC` — there's no mmcli equivalent, and exposing raw AT commands through `mmcli --command` would need a much broader sudoers grant (any AT command, as root, with no password) than the specific entries this project already relies on. So these subcommands always talk to the AT port directly, the same way `--at` does for SMS: they stop ModemManager, run the command, and restart it — no new sudo permissions required.
+
+```bash
+# check whether it's currently active, and to which number
+sudo python3 scripts/wwan-modem-tools.py --callfwd-status
+
+# forward all incoming calls to another number
+sudo python3 scripts/wwan-modem-tools.py --callfwd-on +34600000000
+
+# disable it again
+sudo python3 scripts/wwan-modem-tools.py --callfwd-off
+```
+
+Notes:
+
+- Stopping ModemManager also drops whatever was keeping the modem registered on the voice (CS) network. The script re-triggers automatic registration (`AT+COPS=0`) and waits up to 30s for it before issuing `AT+CCFC` — without this you'd get a bare `+CME ERROR: unknown`.
+- `--callfwd-off` uses erasure (`AT+CCFC=0,4`, like the standard `##21#` code), which also clears the registered number, not just deactivation (`AT+CCFC=0,0`).
+- These commands only manage **reason 0 (unconditional)**. `AT+CCFC` also supports conditional reasons (busy/no-reply/unreachable) which aren't wired up here since unconditional is what's needed while the SIM can't ring at all.
 
 ---
 
@@ -182,7 +207,7 @@ python3 scripts/wwan-sms-read.py --from openbank --watch --code -y --keep-online
 | `systemd/wwan-sim-unlock.service` | `/etc/systemd/system/` | Systemd unit for SIM PIN unlock |
 | `networkmanager/dispatcher.d/99-wwan-ip` | `/etc/NetworkManager/dispatcher.d/` | Configures `wwan0` IP when connection activates |
 | `scripts/wwan-speedtest.sh` | run directly | Tests LTE down/up speed via `speedtest-cli`, bound to `wwan0` |
-| `scripts/wwan-sms-read.py` | run directly | Lists and reads SMS messages via mmcli or AT port |
+| `scripts/wwan-modem-tools.py` | run directly | Lists/reads SMS via mmcli or AT port; manages unconditional call forwarding via AT+CCFC |
 
 ---
 
