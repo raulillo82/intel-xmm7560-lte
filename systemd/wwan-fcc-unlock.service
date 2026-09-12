@@ -8,7 +8,7 @@ ConditionPathExists=/sys/bus/pci/devices/0000:01:00.0
 Type=oneshot
 ExecStart=/usr/local/bin/wwan-fcc-unlock.sh
 RemainAfterExit=yes
-TimeoutStartSec=300
+TimeoutStartSec=150
 
 [Install]
 WantedBy=multi-user.target
