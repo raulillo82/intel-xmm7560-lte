@@ -66,6 +66,19 @@ When the user connects from the desktop network applet, the NM dispatcher script
 > consistently times out. The working approach is: let MM initialise the modem, stop MM
 > to release the port, unlock, restart MM.
 
+**Fault tolerance:** `wwan-fcc-unlock.sh` retries the unlock once (5s apart) before giving
+up, restarting ModemManager either way. Each attempt is wrapped in `timeout 30` and runs
+with `PYTHONUNBUFFERED=1`, so a hang shows up immediately in `journalctl -u
+wwan-fcc-unlock.service` (naming the exact AT command it stalled on) instead of getting
+silently discarded when the process is killed — Python fully buffers stdout when it isn't
+a TTY, so without this a killed process would take its buffered progress output down with
+it. `wwan-fcc-unlock.service`'s own `TimeoutStartSec=150` is just a backstop above the
+worst case of the two bounded attempts plus the up-to-120s modem-detection wait. Because
+`wwan-sim-unlock.service` blocks `display-manager` until `wwan-fcc-unlock.service`
+finishes, a fully unresponsive modem can still delay reaching the login screen by up to
+~2.5 minutes — a known trade-off of unlocking the SIM before the desktop starts (see box
+above). This happened once (2026-09-12, ~8 minute boot) before these bounds were added.
+
 ---
 
 ## Prerequisites
